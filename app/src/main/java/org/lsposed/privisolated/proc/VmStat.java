@@ -97,7 +97,7 @@ public final class VmStat implements ProcTool {
     private static Map<String, long[]> parseStat(String text) {
         var map = new HashMap<String, long[]>();
         for (var line : text.split("\n")) {
-            if (line.isBlank()) continue;
+            if (line.trim().isEmpty()) continue;
             var parts = line.split("\\s+");
             var key = parts[0];
             var values = new long[parts.length - 1];

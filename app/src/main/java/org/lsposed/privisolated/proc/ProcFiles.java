@@ -16,10 +16,17 @@ public final class ProcFiles {
     private ProcFiles() {
     }
 
-    /** Reads a whole file as a String, or {@code null} if unreadable. */
+    /** Reads a whole file as a String, or {@code null} if unreadable.
+     *  Uses a reader loop instead of {@code Files.readString}, which is only
+     *  available on API 33+ (minSdk here is 29). */
     public static String readText(String path) {
-        try {
-            return Files.readString(Paths.get(path));
+        try (var reader = Files.newBufferedReader(Paths.get(path))) {
+            var sb = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                sb.append(line).append('\n');
+            }
+            return sb.toString();
         } catch (IOException e) {
             return null;
         }

@@ -22,7 +22,7 @@ public final class Pgrep implements ProcTool {
 
     @Override
     public String run(String arg) {
-        if (arg == null || arg.isBlank()) {
+        if (arg == null || arg.trim().isEmpty()) {
             return "ERROR: usage: pgrep <program name>";
         }
         var pids = ProcMatch.byName(arg);

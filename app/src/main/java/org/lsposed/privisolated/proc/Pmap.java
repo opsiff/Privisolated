@@ -23,7 +23,7 @@ public final class Pmap implements ProcTool {
 
     @Override
     public String run(String arg) {
-        var pid = (arg == null || arg.isBlank())
+        var pid = (arg == null || arg.trim().isEmpty())
                 ? ProcFiles.selfPid()
                 : arg.replace("/proc/", "").replace("/maps", "");
         var maps = ProcFiles.readText("/proc/" + pid + "/maps");
@@ -34,7 +34,7 @@ public final class Pmap implements ProcTool {
         var regions = new ArrayList<Region>();
         long total = 0;
         for (var line : maps.split("\n")) {
-            if (line.isBlank()) continue;
+            if (line.trim().isEmpty()) continue;
             var parts = line.split("\\s+", 6);
             if (parts.length < 5) continue;
             var dash = parts[0].indexOf('-');

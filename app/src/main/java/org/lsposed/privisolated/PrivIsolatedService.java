@@ -4,6 +4,7 @@ import android.app.Service;
 import android.content.Intent;
 import android.os.IBinder;
 import android.os.Process;
+import android.util.Log;
 
 import org.lsposed.privisolated.proc.ProcTools;
 
@@ -23,7 +24,14 @@ public class PrivIsolatedService extends Service {
         public String getToolResult(String tool, String arg) {
             for (var procTool : ProcTools.ALL) {
                 if (procTool.name().equals(tool)) {
-                    return procTool.run(arg);
+                    // An uncaught exception on the binder thread kills the whole
+                    // isolated process (the client then sees DeadObjectException),
+                    // so convert any tool failure into a returned error instead.
+                    try {
+                        return procTool.run(arg);
+                    } catch (Throwable t) {
+                        return "ERROR: " + tool + " crashed: " + Log.getStackTraceString(t);
+                    }
                 }
             }
             return "ERROR: unknown tool: " + tool;

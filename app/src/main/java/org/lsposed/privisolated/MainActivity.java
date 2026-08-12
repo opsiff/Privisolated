@@ -32,12 +32,23 @@ public class MainActivity extends Activity {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private volatile IPrivIsolatedService server;
     private boolean bound;
+    /** Tool call waiting to be retried after a rebind (see DeadObjectException). */
+    private volatile String pendingTool;
+    private volatile String pendingArg;
+    private volatile boolean retryPending;
 
     /** One binding kept alive for the whole activity, like the original app. */
     private final ServiceConnection connection = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder binder) {
             server = IPrivIsolatedService.Stub.asInterface(binder);
+            // The process died mid-call before; replay the pending call once.
+            if (retryPending) {
+                var tool = pendingTool;
+                var arg = pendingArg;
+                retryPending = false;
+                dispatchCall(tool, arg, false);
+            }
         }
 
         @Override
@@ -157,6 +168,14 @@ public class MainActivity extends Activity {
 
     /** Serial call to the held isolated-service binder (single-thread executor). */
     private void runInIsolatedProcess(String tool, String arg) {
+        pendingTool = tool;
+        pendingArg = arg;
+        retryPending = true;
+        dispatchCall(tool, arg, true);
+    }
+
+    /** Executes one tool call; {@code allowRetry} permits one replay after a rebind. */
+    private void dispatchCall(String tool, String arg, boolean allowRetry) {
         executor.execute(() -> {
             var svc = server;
             if (svc == null) {
@@ -167,14 +186,22 @@ public class MainActivity extends Activity {
                 var result = tool == null
                         ? svc.getResult()
                         : svc.getToolResult(tool, arg);
+                retryPending = false;
                 runOnUiThread(() -> setText(result));
             } catch (DeadObjectException e) {
                 server = null;
-                runOnUiThread(() -> {
-                    setText("ERROR: isolated service died, rebinding...");
-                    bindService();
-                });
+                if (allowRetry) {
+                    // Keep retryPending set: onServiceConnected replays the call.
+                    runOnUiThread(() -> {
+                        setText("ERROR: isolated service died, rebinding and retrying...");
+                        bindService();
+                    });
+                } else {
+                    retryPending = false;
+                    runOnUiThread(() -> setText("ERROR: isolated service keeps dying: " + e));
+                }
             } catch (RemoteException e) {
+                retryPending = false;
                 runOnUiThread(() -> setText(Log.getStackTraceString(e)));
             }
         });

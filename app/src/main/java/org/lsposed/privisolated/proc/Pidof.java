@@ -27,7 +27,7 @@ public final class Pidof implements ProcTool {
 
     @Override
     public String run(String arg) {
-        if (arg == null || arg.isBlank()) {
+        if (arg == null || arg.trim().isEmpty()) {
             return "ERROR: usage: pidof <program name>";
         }
         var pids = new ArrayList<String>();

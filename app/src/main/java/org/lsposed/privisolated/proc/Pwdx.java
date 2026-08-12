@@ -23,7 +23,7 @@ public final class Pwdx implements ProcTool {
 
     @Override
     public String run(String arg) {
-        if (arg == null || arg.isBlank()) {
+        if (arg == null || arg.trim().isEmpty()) {
             return line(ProcFiles.selfPid());
         }
         var sb = new StringBuilder();
