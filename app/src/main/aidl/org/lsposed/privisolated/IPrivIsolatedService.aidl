@@ -10,4 +10,6 @@ interface IPrivIsolatedService {
     List<String> listDir(String path);
 
     String readFile(String path, int maxBytes);
+
+    byte[] readFileBytes(String path, int maxBytes);
 }

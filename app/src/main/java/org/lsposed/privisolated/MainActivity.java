@@ -4,14 +4,17 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ComponentName;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.graphics.Typeface;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.DeadObjectException;
 import android.os.IBinder;
 import android.os.RemoteException;
+import android.provider.MediaStore;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -23,6 +26,7 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import org.lsposed.privisolated.proc.ProcTool;
 import org.lsposed.privisolated.proc.ProcTools;
@@ -347,6 +351,7 @@ public class MainActivity extends Activity {
                 .setTitle(filePath)
                 .setView(scroll)
                 .setPositiveButton("Share", (d, w) -> shareText(filePath, content))
+                .setNeutralButton("Save", (d, w) -> saveBrowserFile(filePath))
                 .setNegativeButton("Close", null)
                 .show();
     }
@@ -357,6 +362,67 @@ public class MainActivity extends Activity {
         send.putExtra(Intent.EXTRA_SUBJECT, filePath);
         send.putExtra(Intent.EXTRA_TEXT, content);
         startActivity(Intent.createChooser(send, "Share " + filePath));
+    }
+
+    /**
+     * Saves the raw bytes (binary-safe, e.g. config.gz) to the public
+     * Downloads directory via MediaStore; no storage permission needed on
+     * API 29+. The read is capped below the 1 MiB binder limit.
+     */
+    private void saveBrowserFile(String filePath) {
+        var svc = server;
+        if (svc == null) {
+            setText("ERROR: isolated service not connected");
+            return;
+        }
+        final int max = 768 * 1024;
+        setText("INFO: saving " + filePath + "...");
+        executor.execute(() -> {
+            try {
+                byte[] bytes = svc.readFileBytes(filePath, max);
+                if (bytes == null) {
+                    runOnUiThread(() -> setText("ERROR: cannot read " + filePath));
+                    return;
+                }
+                boolean truncated = bytes.length == max;
+                Uri uri = writeToDownloads(filePath, bytes);
+                runOnUiThread(() -> {
+                    if (uri != null) {
+                        Toast.makeText(this, "Saved: " + uri.getLastPathSegment()
+                                + (truncated ? " (truncated at " + max + " bytes)" : ""),
+                                Toast.LENGTH_LONG).show();
+                    } else {
+                        setText("ERROR: failed to save " + filePath);
+                    }
+                });
+            } catch (RemoteException e) {
+                runOnUiThread(() -> setText(Log.getStackTraceString(e)));
+            }
+        });
+    }
+
+    private Uri writeToDownloads(String filePath, byte[] bytes) {
+        try {
+            int slash = filePath.lastIndexOf('/');
+            String name = slash == -1 ? filePath : filePath.substring(slash + 1);
+            var values = new ContentValues();
+            values.put(MediaStore.Downloads.DISPLAY_NAME, name);
+            values.put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream");
+            values.put(MediaStore.Downloads.IS_PENDING, 1);
+            var uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            if (uri == null) return null;
+            try (var os = getContentResolver().openOutputStream(uri)) {
+                if (os == null) return null;
+                os.write(bytes);
+            }
+            values.clear();
+            values.put(MediaStore.Downloads.IS_PENDING, 0);
+            getContentResolver().update(uri, values, null, null);
+            return uri;
+        } catch (Exception e) {
+            Log.e("Privisolated", "save failed", e);
+            return null;
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")

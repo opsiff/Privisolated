@@ -34,13 +34,24 @@ public final class ProcFs {
         return names;
     }
 
-    /** Reads at most {@code maxBytes}; truncation is marked with a trailing note. */
+    /** Reads at most {@code maxBytes} as text; possible truncation is marked. */
     public static String read(String path, int maxBytes) throws IOException {
-        var bytes = Files.readAllBytes(Paths.get(path));
-        if (bytes.length > maxBytes) {
-            return new String(bytes, 0, maxBytes, StandardCharsets.UTF_8)
-                    + "\n... [truncated at " + maxBytes + " bytes, total " + bytes.length + "]";
+        var bytes = readBytes(path, maxBytes);
+        var text = new String(bytes, StandardCharsets.UTF_8);
+        if (bytes.length == maxBytes) {
+            text += "\n... [possibly truncated at " + maxBytes + " bytes]";
         }
-        return new String(bytes, StandardCharsets.UTF_8);
+        return text;
+    }
+
+    /** Reads raw bytes (binary-safe), capped at {@code maxBytes}. */
+    public static byte[] readBytes(String path, int maxBytes) throws IOException {
+        var all = Files.readAllBytes(Paths.get(path));
+        if (all.length <= maxBytes) {
+            return all;
+        }
+        var part = new byte[maxBytes];
+        System.arraycopy(all, 0, part, 0, maxBytes);
+        return part;
     }
 }

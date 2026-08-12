@@ -57,6 +57,15 @@ public class PrivIsolatedService extends Service {
                 return "ERROR: " + t.getClass().getSimpleName() + ": " + t.getMessage();
             }
         }
+
+        @Override
+        public byte[] readFileBytes(String path, int maxBytes) {
+            try {
+                return ProcFs.readBytes(path, maxBytes);
+            } catch (Throwable t) {
+                return null;
+            }
+        }
     };
 
     private static String readProc() {
