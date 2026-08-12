@@ -18,6 +18,7 @@ public final class ProcTools {
             Pidof.INSTANCE,
             Pgrep.INSTANCE,
             Pwdx.INSTANCE,
-            Pmap.INSTANCE
+            Pmap.INSTANCE,
+            Top.INSTANCE
     );
 }
