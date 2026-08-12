@@ -38,9 +38,19 @@ public final class Top implements ProcTool {
 
     @Override
     public String run(String arg) {
-        var statText = ProcFiles.readText("/proc/stat");
-        var uptimeText = ProcFiles.readText("/proc/uptime");
-        var loadText = ProcFiles.readText("/proc/loadavg");
+        String statText;
+        String uptimeText;
+        String loadText;
+        try {
+            statText = ProcFiles.readTextChecked("/proc/stat");
+            uptimeText = ProcFiles.readTextChecked("/proc/uptime");
+            loadText = ProcFiles.readTextChecked("/proc/loadavg");
+        } catch (java.io.IOException e) {
+            // These are system-global files, not per-process data: gid 3009 is
+            // not involved. A failure here means the isolated process itself is
+            // restricted (SELinux) — unrelated to the /proc traversal privilege.
+            return "ERROR: " + e.getClass().getSimpleName() + ": " + e.getMessage();
+        }
         if (statText == null || uptimeText == null || loadText == null) {
             return "ERROR: cannot read /proc/stat, /proc/uptime or /proc/loadavg";
         }

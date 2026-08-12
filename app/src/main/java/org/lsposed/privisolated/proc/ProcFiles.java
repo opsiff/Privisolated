@@ -20,6 +20,15 @@ public final class ProcFiles {
      *  Uses a reader loop instead of {@code Files.readString}, which is only
      *  available on API 33+ (minSdk here is 29). */
     public static String readText(String path) {
+        try {
+            return readTextChecked(path);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /** Like {@link #readText} but lets the caller see the actual failure. */
+    public static String readTextChecked(String path) throws IOException {
         try (var reader = Files.newBufferedReader(Paths.get(path))) {
             var sb = new StringBuilder();
             String line;
@@ -27,8 +36,6 @@ public final class ProcFiles {
                 sb.append(line).append('\n');
             }
             return sb.toString();
-        } catch (IOException e) {
-            return null;
         }
     }
 
