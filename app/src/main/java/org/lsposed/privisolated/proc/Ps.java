@@ -29,22 +29,26 @@ public final class Ps implements ProcTool {
     public String run(String arg) {
         var rows = new ArrayList<Row>();
         for (var pid : ProcFiles.listPids()) {
-            var stat = ProcFiles.readText("/proc/" + pid + "/stat");
-            if (stat == null) continue;
-            var close = stat.lastIndexOf(')');
-            if (close == -1) continue;
-            String comm = stat.substring(stat.indexOf('(') + 1, close);
-            String[] fields = stat.substring(close + 1).trim().split("\\s+");
-            if (fields.length <= STIME) continue;
-            var cmdline = ProcFiles.readText("/proc/" + pid + "/cmdline");
-            String cmd;
-            if (cmdline == null || cmdline.isEmpty()) {
-                cmd = "[" + comm + "]";
-            } else {
-                cmd = cmdline.replace('\0', ' ').trim();
+            try {
+                var stat = ProcFiles.readText("/proc/" + pid + "/stat");
+                if (stat == null) continue;
+                var close = stat.lastIndexOf(')');
+                if (close == -1) continue;
+                String comm = stat.substring(stat.indexOf('(') + 1, close);
+                String[] fields = stat.substring(close + 1).trim().split("\\s+");
+                if (fields.length <= STIME) continue;
+                var cmdline = ProcFiles.readText("/proc/" + pid + "/cmdline");
+                String cmd;
+                if (cmdline == null || cmdline.isEmpty()) {
+                    cmd = "[" + comm + "]";
+                } else {
+                    cmd = cmdline.replace('\0', ' ').trim();
+                }
+                long ticks = Long.parseLong(fields[UTIME]) + Long.parseLong(fields[STIME]);
+                rows.add(new Row(pid, fields[PPID], fields[STATE], ticks, cmd));
+            } catch (RuntimeException e) {
+                // One malformed proc entry must not abort the whole listing.
             }
-            long ticks = Long.parseLong(fields[UTIME]) + Long.parseLong(fields[STIME]);
-            rows.add(new Row(pid, fields[PPID], fields[STATE], ticks, cmd));
         }
         rows.sort((a, b) -> Integer.compareUnsigned(Integer.parseUnsignedInt(a.pid),
                 Integer.parseUnsignedInt(b.pid)));
@@ -55,6 +59,7 @@ public final class Ps implements ProcTool {
             sb.append(String.format("%-7s %-7s %-5s %-8s %s\n",
                     row.pid, row.ppid, row.state, formatTicks(row.ticks), row.cmd));
         }
+        sb.append(rows.size()).append(" processes\n");
         return sb.toString();
     }
 

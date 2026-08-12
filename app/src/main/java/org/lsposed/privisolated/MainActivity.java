@@ -2,6 +2,7 @@ package org.lsposed.privisolated;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -28,7 +29,8 @@ import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
     private WebView webView;
-    private EditText argInput;
+    /** Last argument typed in a tool dialog, remembered for convenience. */
+    private String lastArg = "";
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private volatile IPrivIsolatedService server;
     private boolean bound;
@@ -129,7 +131,7 @@ public class MainActivity extends Activity {
         var sb = new StringBuilder();
         sb.append("<h3>Privisolated v").append(BuildConfig.VERSION_NAME)
                 .append(" &mdash; ").append(ProcTools.ALL.size()).append(" tools</h3>");
-        sb.append("<p>Tap a tool to run it; fill the field below for pidof/pgrep (name) or pwdx/pmap (PID).</p>");
+        sb.append("<p>Tap a tool: a dialog asks for the optional argument, then the isolated process runs it.</p>");
         for (var tool : ProcTools.ALL) {
             sb.append("<p><a href='#' onclick=\"Android.run('")
                     .append(tool.name()).append("');return false;\">[")
@@ -146,19 +148,26 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * Runs a procps tool. The work is executed by the isolated process
-     * (PrivIsolatedService): the isolated process holds gid 3009, which grants
-     * unrestricted /proc access, so the tools must run there to be meaningful.
+     * Runs a procps tool. A dialog asks for the optional argument first
+     * (the field lives in the dialog so nothing covers it); the work is then
+     * executed by the isolated process (PrivIsolatedService): the isolated
+     * process holds gid 3009, which grants unrestricted /proc access, so the
+     * tools must run there to be meaningful.
      */
     private void runTool(ProcTool tool) {
-        var arg = argInput.getText().toString().trim();
-        if (tool.requiresArg() && arg.isEmpty()) {
-            setText("usage: " + tool.name() + " <argument>\n"
-                    + "Fill the field above first (process name or PID).");
-            return;
-        }
-        setText("INFO: running " + tool.name() + "...");
-        runInIsolatedProcess(tool.name(), arg);
+        var input = new EditText(this);
+        input.setText(lastArg);
+        input.setHint(tool.requiresArg() ? "process name" : "process name or PID (optional)");
+        new AlertDialog.Builder(this)
+                .setTitle(tool.name())
+                .setView(input)
+                .setPositiveButton("Run", (d, w) -> {
+                    lastArg = input.getText().toString().trim();
+                    setText("INFO: running " + tool.name() + "...");
+                    runInIsolatedProcess(tool.name(), lastArg);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     private void bindMountCheck() {
@@ -260,11 +269,6 @@ public class MainActivity extends Activity {
         fingerprint.setText("Privisolated v" + BuildConfig.VERSION_NAME
                 + " — " + ProcTools.ALL.size() + " tools");
         root.addView(fingerprint, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        argInput = new EditText(this);
-        argInput.setHint("argument (process name or PID)");
-        root.addView(argInput, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         webView = new WebView(this);
