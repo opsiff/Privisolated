@@ -2,3 +2,7 @@
 # The procps-style tools are instantiated via the ProcTools registry from
 # MainActivity; without explicit keeps aggressive R8 strips the whole package.
 -keep class org.lsposed.privisolated.proc.** { *; }
+# WebView JavaScript bridge: invoked reflectively from HTML (Android.run()).
+-keepclassmembers class org.lsposed.privisolated.MainActivity$ToolBridge {
+    @android.webkit.JavascriptInterface <methods>;
+}

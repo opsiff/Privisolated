@@ -1,5 +1,6 @@
 package org.lsposed.privisolated;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Context;
@@ -10,11 +11,13 @@ import android.os.IBinder;
 import android.os.RemoteException;
 import android.util.Log;
 import android.view.ViewGroup;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import org.lsposed.privisolated.proc.ProcTool;
 import org.lsposed.privisolated.proc.ProcTools;
@@ -49,7 +52,27 @@ public class MainActivity extends Activity {
         }
     };
 
+    /** Bridge called from the HTML tool menu (Android.run('uptime')). */
+    @SuppressLint("SetJavaScriptEnabled")
+    private final class ToolBridge {
+        @JavascriptInterface
+        public void run(String name) {
+            for (var tool : ProcTools.ALL) {
+                if (tool.name().equals(name)) {
+                    runTool(tool);
+                    return;
+                }
+            }
+        }
+    }
+
     private void setText(String text) {
+        setHtml(escapeHtml(text));
+    }
+
+    /** Renders a full HTML page whose body is {@code bodyHtml} verbatim
+     *  (used by the tool menu, which contains real markup). */
+    private void setHtml(String bodyHtml) {
         var html = """
                 <!DOCTYPE html>
                 <html>
@@ -74,15 +97,32 @@ public class MainActivity extends Activity {
                             word-break: break-all;
                             overflow-wrap: break-word;
                         }
+                        .content a { display: block; }
                     </style>
                 </head>
                 <body>
-                    <div class="content">""" + escapeHtml(text) + """
+                    <div class="content">""" + bodyHtml + """
                     </div>
                 </body>
                 </html>
                 """;
         webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null);
+    }
+
+    /** Startup page: version fingerprint + clickable tool list (works even if
+     *  the native button row fails to render on some devices). */
+    private void showMenu() {
+        var sb = new StringBuilder();
+        sb.append("<h3>Privisolated v").append(BuildConfig.VERSION_NAME)
+                .append(" &mdash; ").append(ProcTools.ALL.size()).append(" tools</h3>");
+        sb.append("<p>Tap a tool to run it; fill the field below for pidof/pgrep (name) or pwdx/pmap (PID).</p>");
+        for (var tool : ProcTools.ALL) {
+            sb.append("<p><a href='#' onclick=\"Android.run('")
+                    .append(tool.name()).append("');return false;\">[")
+                    .append(tool.name()).append("]</a></p>");
+        }
+        sb.append("<p><a href='#' onclick=\"Android.run('mounts');return false;\">[mounts]</a></p>");
+        setHtml(sb.toString());
     }
 
     private static String escapeHtml(String text) {
@@ -114,13 +154,23 @@ public class MainActivity extends Activity {
         }
     }
 
+    @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getActionBar().setSubtitle(BuildConfig.VERSION_NAME);
+        // No ActionBar subtitle: it occupies a second title line that pushes
+        // the tool button row out of sight. The version is shown by the
+        // fingerprint TextView below instead.
 
         var root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
+
+        // Version fingerprint that cannot be missed.
+        var fingerprint = new TextView(this);
+        fingerprint.setText("Privisolated v" + BuildConfig.VERSION_NAME
+                + " — " + ProcTools.ALL.size() + " tools");
+        root.addView(fingerprint, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         var bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
@@ -145,10 +195,12 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         webView = new WebView(this);
+        webView.getSettings().setJavaScriptEnabled(true);
+        webView.addJavascriptInterface(new ToolBridge(), "Android");
         root.addView(webView, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         setContentView(root);
 
-        bindMountCheck();
+        showMenu();
     }
 }
