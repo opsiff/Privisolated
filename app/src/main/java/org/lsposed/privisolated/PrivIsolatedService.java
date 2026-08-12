@@ -5,6 +5,8 @@ import android.content.Intent;
 import android.os.IBinder;
 import android.os.Process;
 
+import org.lsposed.privisolated.proc.ProcTools;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -15,6 +17,16 @@ public class PrivIsolatedService extends Service {
         @Override
         public String getResult() {
             return readProc();
+        }
+
+        @Override
+        public String getToolResult(String tool, String arg) {
+            for (var procTool : ProcTools.ALL) {
+                if (procTool.name().equals(tool)) {
+                    return procTool.run(arg);
+                }
+            }
+            return "ERROR: unknown tool: " + tool;
         }
     };
 

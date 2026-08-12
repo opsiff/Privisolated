@@ -29,34 +29,16 @@ public class MainActivity extends Activity {
     private WebView webView;
     private EditText argInput;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private final ServiceConnection connection = new ServiceConnection() {
-        @Override
-        public void onServiceConnected(ComponentName name, IBinder binder) {
-            var server = IPrivIsolatedService.Stub.asInterface(binder);
-            try {
-                setText(server.getResult());
-            } catch (RemoteException e) {
-                setText(Log.getStackTraceString(e));
-            }
-            unbindService(this);
-        }
-
-        @Override
-        public void onServiceDisconnected(ComponentName name) {
-        }
-
-        @Override
-        public void onNullBinding(ComponentName name) {
-            setText("ERROR: Fake Environment");
-            unbindService(this);
-        }
-    };
 
     /** Bridge called from the HTML tool menu (Android.run('uptime')). */
     @SuppressLint("SetJavaScriptEnabled")
     private final class ToolBridge {
         @JavascriptInterface
         public void run(String name) {
+            if ("mounts".equals(name)) {
+                bindMountCheck();
+                return;
+            }
             for (var tool : ProcTools.ALL) {
                 if (tool.name().equals(name)) {
                     runTool(tool);
@@ -131,17 +113,52 @@ public class MainActivity extends Activity {
                 .replace(">", "&gt;");
     }
 
+    /**
+     * Runs a procps tool. The work is executed by the isolated process
+     * (PrivIsolatedService): the isolated process holds gid 3009, which grants
+     * unrestricted /proc access, so the tools must run there to be meaningful.
+     */
     private void runTool(ProcTool tool) {
         var arg = argInput.getText().toString().trim();
         setText("INFO: running " + tool.name() + "...");
-        executor.execute(() -> {
-            var result = tool.run(arg);
-            runOnUiThread(() -> setText(result));
-        });
+        runInIsolatedProcess(tool.name(), arg);
     }
 
     private void bindMountCheck() {
         setText("INFO: Waiting for service...");
+        runInIsolatedProcess(null, null);
+    }
+
+    /** Binds the isolated service, invokes the requested tool and shows the result. */
+    private void runInIsolatedProcess(String tool, String arg) {
+        var connection = new ServiceConnection() {
+            @Override
+            public void onServiceConnected(ComponentName name, IBinder binder) {
+                var server = IPrivIsolatedService.Stub.asInterface(binder);
+                executor.execute(() -> {
+                    try {
+                        var result = tool == null
+                                ? server.getResult()
+                                : server.getToolResult(tool, arg);
+                        runOnUiThread(() -> setText(result));
+                    } catch (RemoteException e) {
+                        runOnUiThread(() -> setText(Log.getStackTraceString(e)));
+                    } finally {
+                        unbindService(this);
+                    }
+                });
+            }
+
+            @Override
+            public void onServiceDisconnected(ComponentName name) {
+            }
+
+            @Override
+            public void onNullBinding(ComponentName name) {
+                setText("ERROR: Fake Environment");
+                unbindService(this);
+            }
+        };
         try {
             if (!bindIsolatedService(new Intent(this, PrivIsolatedService.class),
                     Context.BIND_AUTO_CREATE, "priv_isolated", getMainExecutor(), connection)) {
