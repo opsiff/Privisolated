@@ -7,6 +7,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.DeadObjectException;
 import android.os.IBinder;
@@ -17,13 +18,17 @@ import android.view.MenuItem;
 import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
+import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import org.lsposed.privisolated.proc.ProcTool;
 import org.lsposed.privisolated.proc.ProcTools;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -71,6 +76,10 @@ public class MainActivity extends Activity {
         public void run(String name) {
             if ("mounts".equals(name)) {
                 bindMountCheck();
+                return;
+            }
+            if ("browser".equals(name)) {
+                openBrowser("/proc");
                 return;
             }
             for (var tool : ProcTools.ALL) {
@@ -138,6 +147,7 @@ public class MainActivity extends Activity {
                     .append(tool.name()).append("]</a></p>");
         }
         sb.append("<p><a href='#' onclick=\"Android.run('mounts');return false;\">[mounts]</a></p>");
+        sb.append("<p><a href='#' onclick=\"Android.run('browser');return false;\">[browser]</a></p>");
         setHtml(sb.toString());
     }
 
@@ -236,6 +246,7 @@ public class MainActivity extends Activity {
             menu.add(Menu.NONE, i, Menu.NONE, ProcTools.ALL.get(i).name());
         }
         menu.add(Menu.NONE, ProcTools.ALL.size(), Menu.NONE, "mounts");
+        menu.add(Menu.NONE, ProcTools.ALL.size() + 1, Menu.NONE, "browser");
         return true;
     }
 
@@ -250,7 +261,102 @@ public class MainActivity extends Activity {
             bindMountCheck();
             return true;
         }
+        if (id == ProcTools.ALL.size() + 1) {
+            openBrowser("/proc");
+            return true;
+        }
         return super.onOptionsItemSelected(item);
+    }
+
+    /** Current directory shown in the /proc browser dialog. */
+    private String browserPath = "/proc";
+
+    /**
+     * Opens a navigation dialog over /proc. Listing happens in the isolated
+     * process (gid 3009), the dialog itself runs in the app process.
+     */
+    private void openBrowser(String start) {
+        browserPath = start;
+        refreshBrowser();
+    }
+
+    private void refreshBrowser() {
+        var svc = server;
+        if (svc == null) {
+            setText("ERROR: isolated service not connected");
+            return;
+        }
+        final String path = browserPath;
+        executor.execute(() -> {
+            try {
+                List<String> entries = svc.listDir(path);
+                runOnUiThread(() -> showBrowserDialog(path, entries));
+            } catch (RemoteException e) {
+                runOnUiThread(() -> setText(Log.getStackTraceString(e)));
+            }
+        });
+    }
+
+    private void showBrowserDialog(String path, List<String> entries) {
+        var names = new ArrayList<String>();
+        names.add("..");
+        names.addAll(entries);
+        new AlertDialog.Builder(this)
+                .setTitle(path)
+                .setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, names),
+                        (d, which) -> {
+                            var entry = names.get(which);
+                            if ("..".equals(entry)) {
+                                int slash = path.lastIndexOf('/');
+                                browserPath = slash > 0 ? path.substring(0, slash) : "/";
+                                refreshBrowser();
+                            } else if (entry.endsWith("/")) {
+                                browserPath = path.endsWith("/") ? path + entry : path + "/" + entry;
+                                refreshBrowser();
+                            } else {
+                                openBrowserFile(path.endsWith("/") ? path + entry : path + "/" + entry);
+                            }
+                        })
+                .setNegativeButton("Close", null)
+                .show();
+    }
+
+    private void openBrowserFile(String filePath) {
+        var svc = server;
+        if (svc == null) return;
+        setText("INFO: reading " + filePath + "...");
+        executor.execute(() -> {
+            try {
+                String content = svc.readFile(filePath, 64 * 1024);
+                runOnUiThread(() -> showBrowserFileDialog(filePath, content));
+            } catch (RemoteException e) {
+                runOnUiThread(() -> setText(Log.getStackTraceString(e)));
+            }
+        });
+    }
+
+    private void showBrowserFileDialog(String filePath, String content) {
+        var text = new TextView(this);
+        text.setTypeface(Typeface.MONOSPACE);
+        text.setTextSize(12);
+        text.setPadding(24, 24, 24, 24);
+        text.setText(content);
+        var scroll = new ScrollView(this);
+        scroll.addView(text);
+        new AlertDialog.Builder(this)
+                .setTitle(filePath)
+                .setView(scroll)
+                .setPositiveButton("Share", (d, w) -> shareText(filePath, content))
+                .setNegativeButton("Close", null)
+                .show();
+    }
+
+    private void shareText(String filePath, String content) {
+        var send = new Intent(Intent.ACTION_SEND);
+        send.setType("text/plain");
+        send.putExtra(Intent.EXTRA_SUBJECT, filePath);
+        send.putExtra(Intent.EXTRA_TEXT, content);
+        startActivity(Intent.createChooser(send, "Share " + filePath));
     }
 
     @SuppressLint("SetJavaScriptEnabled")

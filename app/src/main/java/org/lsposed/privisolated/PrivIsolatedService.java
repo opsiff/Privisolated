@@ -6,12 +6,15 @@ import android.os.IBinder;
 import android.os.Process;
 import android.util.Log;
 
+import org.lsposed.privisolated.proc.ProcFs;
 import org.lsposed.privisolated.proc.ProcTools;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 
 public class PrivIsolatedService extends Service {
     private final IPrivIsolatedService.Stub binder = new IPrivIsolatedService.Stub() {
@@ -35,6 +38,24 @@ public class PrivIsolatedService extends Service {
                 }
             }
             return "ERROR: unknown tool: " + tool;
+        }
+
+        @Override
+        public List<String> listDir(String path) {
+            try {
+                return ProcFs.list(path);
+            } catch (Throwable t) {
+                return List.of("ERROR: " + t.getClass().getSimpleName() + ": " + t.getMessage());
+            }
+        }
+
+        @Override
+        public String readFile(String path, int maxBytes) {
+            try {
+                return ProcFs.read(path, maxBytes);
+            } catch (Throwable t) {
+                return "ERROR: " + t.getClass().getSimpleName() + ": " + t.getMessage();
+            }
         }
     };
 
