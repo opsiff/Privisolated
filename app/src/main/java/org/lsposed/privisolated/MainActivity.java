@@ -10,12 +10,12 @@ import android.os.Bundle;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.util.Log;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
-import android.widget.Button;
 import android.widget.EditText;
-import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -171,6 +171,30 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** Tool selector in the top-right ActionBar menu (the WebView menu is a fallback). */
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        for (int i = 0; i < ProcTools.ALL.size(); i++) {
+            menu.add(Menu.NONE, i, Menu.NONE, ProcTools.ALL.get(i).name());
+        }
+        menu.add(Menu.NONE, ProcTools.ALL.size(), Menu.NONE, "mounts");
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        int id = item.getItemId();
+        if (id >= 0 && id < ProcTools.ALL.size()) {
+            runTool(ProcTools.ALL.get(id));
+            return true;
+        }
+        if (id == ProcTools.ALL.size()) {
+            bindMountCheck();
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -187,23 +211,6 @@ public class MainActivity extends Activity {
         fingerprint.setText("Privisolated v" + BuildConfig.VERSION_NAME
                 + " — " + ProcTools.ALL.size() + " tools");
         root.addView(fingerprint, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        var bar = new LinearLayout(this);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        var scroll = new HorizontalScrollView(this);
-        for (var tool : ProcTools.ALL) {
-            var button = new Button(this);
-            button.setText(tool.name());
-            button.setOnClickListener(v -> runTool(tool));
-            bar.addView(button);
-        }
-        var mountsButton = new Button(this);
-        mountsButton.setText("mounts");
-        mountsButton.setOnClickListener(v -> bindMountCheck());
-        bar.addView(mountsButton);
-        scroll.addView(bar);
-        root.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         argInput = new EditText(this);
