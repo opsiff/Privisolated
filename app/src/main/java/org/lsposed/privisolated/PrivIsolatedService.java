@@ -69,38 +69,45 @@ public class PrivIsolatedService extends Service {
     };
 
     private static String readProc() {
-        var dir = Paths.get("/proc");
-        try (var stream = Files.newDirectoryStream(dir, Files::isDirectory)) {
-            int expected = 1;
-            var set = new HashSet<String>();
-            for (var path : stream) {
-                var name = path.getFileName().toString();
-                if (!name.chars().allMatch(Character::isDigit)) continue;
+        try {
+            var dir = Paths.get("/proc");
+            try (var stream = Files.newDirectoryStream(dir, Files::isDirectory)) {
+                int expected = 1;
+                var set = new HashSet<String>();
+                for (var path : stream) {
+                    var name = path.getFileName().toString();
+                    if (!name.chars().allMatch(Character::isDigit)) continue;
 
-                var infos = MountInfo.scan(name);
-                if (infos.get(0).optional().startsWith("shared")) {
-                    expected = 2;
-                }
-
-                var builder = new StringBuilder();
-                infos.sort(null);
-                for (var info : infos) {
-                    var str = info.source() + ' ' + info.root() + ' ' + info.point() + ' ' +
-                            info.type() + ' ' + info.options() + ' ' + info.superOptions();
-                    if (str.contains("magisk") || str.contains("KSU") || str.contains("/adb/")) {
-                        return "WARN: " + str;
+                    var infos = MountInfo.scan(name);
+                    if (infos.isEmpty()) continue;
+                    if (infos.get(0).optional().startsWith("shared")) {
+                        expected = 2;
                     }
-                    builder.append(str).append('\n');
+
+                    var builder = new StringBuilder();
+                    infos.sort(null);
+                    for (var info : infos) {
+                        var str = info.source() + ' ' + info.root() + ' ' + info.point() + ' ' +
+                                info.type() + ' ' + info.options() + ' ' + info.superOptions();
+                        if (str.contains("magisk") || str.contains("KSU") || str.contains("/adb/")) {
+                            return "WARN: " + str;
+                        }
+                        builder.append(str).append('\n');
+                    }
+                    set.add(builder.toString());
                 }
-                set.add(builder.toString());
+                if (set.size() != expected) {
+                    return "WARN: Found hidden mount points";
+                } else {
+                    return "OK: Not found";
+                }
+            } catch (IOException e) {
+                return "ERROR: Failed to read /proc: " + e.getMessage();
             }
-            if (set.size() != expected) {
-                return "WARN: Found hidden mount points";
-            } else {
-                return "OK: Not found";
-            }
-        } catch (IOException e) {
-            return "ERROR: Failed to read /proc: " + e.getMessage();
+        } catch (Throwable t) {
+            // A crash on the binder thread would kill the isolated process;
+            // the client would then see a null result or DeadObjectException.
+            return "ERROR: readProc failed: " + t;
         }
     }
 

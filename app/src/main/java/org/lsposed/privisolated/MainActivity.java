@@ -156,6 +156,9 @@ public class MainActivity extends Activity {
     }
 
     private static String escapeHtml(String text) {
+        if (text == null) {
+            return "null";
+        }
         return text.replace("&", "&amp;")
                 .replace("<", "&lt;")
                 .replace(">", "&gt;");
@@ -210,7 +213,9 @@ public class MainActivity extends Activity {
                         ? svc.getResult()
                         : svc.getToolResult(tool, arg);
                 retryPending = false;
-                runOnUiThread(() -> setText(result));
+                runOnUiThread(() -> setText(result == null
+                        ? "ERROR: isolated process returned null"
+                        : result));
             } catch (DeadObjectException e) {
                 server = null;
                 if (allowRetry) {
