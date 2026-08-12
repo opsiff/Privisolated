@@ -7,6 +7,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.os.Bundle;
+import android.os.DeadObjectException;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.util.Log;
@@ -29,6 +30,26 @@ public class MainActivity extends Activity {
     private WebView webView;
     private EditText argInput;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private volatile IPrivIsolatedService server;
+    private boolean bound;
+
+    /** One binding kept alive for the whole activity, like the original app. */
+    private final ServiceConnection connection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder binder) {
+            server = IPrivIsolatedService.Stub.asInterface(binder);
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            server = null;
+        }
+
+        @Override
+        public void onNullBinding(ComponentName name) {
+            setText("ERROR: Fake Environment");
+        }
+    };
 
     /** Bridge called from the HTML tool menu (Android.run('uptime')). */
     @SuppressLint("SetJavaScriptEnabled")
@@ -120,6 +141,11 @@ public class MainActivity extends Activity {
      */
     private void runTool(ProcTool tool) {
         var arg = argInput.getText().toString().trim();
+        if (tool.requiresArg() && arg.isEmpty()) {
+            setText("usage: " + tool.name() + " <argument>\n"
+                    + "Fill the field above first (process name or PID).");
+            return;
+        }
         setText("INFO: running " + tool.name() + "...");
         runInIsolatedProcess(tool.name(), arg);
     }
@@ -129,45 +155,41 @@ public class MainActivity extends Activity {
         runInIsolatedProcess(null, null);
     }
 
-    /** Binds the isolated service, invokes the requested tool and shows the result. */
+    /** Serial call to the held isolated-service binder (single-thread executor). */
     private void runInIsolatedProcess(String tool, String arg) {
-        var connection = new ServiceConnection() {
-            @Override
-            public void onServiceConnected(ComponentName name, IBinder binder) {
-                var server = IPrivIsolatedService.Stub.asInterface(binder);
-                executor.execute(() -> {
-                    try {
-                        var result = tool == null
-                                ? server.getResult()
-                                : server.getToolResult(tool, arg);
-                        runOnUiThread(() -> setText(result));
-                    } catch (RemoteException e) {
-                        runOnUiThread(() -> setText(Log.getStackTraceString(e)));
-                    } finally {
-                        unbindService(this);
-                    }
+        executor.execute(() -> {
+            var svc = server;
+            if (svc == null) {
+                runOnUiThread(() -> setText("ERROR: isolated service not connected"));
+                return;
+            }
+            try {
+                var result = tool == null
+                        ? svc.getResult()
+                        : svc.getToolResult(tool, arg);
+                runOnUiThread(() -> setText(result));
+            } catch (DeadObjectException e) {
+                server = null;
+                runOnUiThread(() -> {
+                    setText("ERROR: isolated service died, rebinding...");
+                    bindService();
                 });
+            } catch (RemoteException e) {
+                runOnUiThread(() -> setText(Log.getStackTraceString(e)));
             }
+        });
+    }
 
-            @Override
-            public void onServiceDisconnected(ComponentName name) {
-            }
-
-            @Override
-            public void onNullBinding(ComponentName name) {
-                setText("ERROR: Fake Environment");
-                unbindService(this);
-            }
-        };
+    private void bindService() {
         try {
-            if (!bindIsolatedService(new Intent(this, PrivIsolatedService.class),
-                    Context.BIND_AUTO_CREATE, "priv_isolated", getMainExecutor(), connection)) {
+            bound = bindIsolatedService(new Intent(this, PrivIsolatedService.class),
+                    Context.BIND_AUTO_CREATE, "priv_isolated", getMainExecutor(), connection);
+            if (!bound) {
                 setText("ERROR: Failed to bind service, service disabled?");
-                unbindService(connection);
             }
         } catch (SecurityException e) {
+            bound = false;
             setText(Log.getStackTraceString(e));
-            unbindService(connection);
         }
     }
 
@@ -226,5 +248,15 @@ public class MainActivity extends Activity {
         setContentView(root);
 
         showMenu();
+        bindService();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (bound) {
+            unbindService(connection);
+        }
+        executor.shutdownNow();
     }
 }

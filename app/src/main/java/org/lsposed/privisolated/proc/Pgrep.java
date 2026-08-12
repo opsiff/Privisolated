@@ -16,6 +16,11 @@ public final class Pgrep implements ProcTool {
     }
 
     @Override
+    public boolean requiresArg() {
+        return true;
+    }
+
+    @Override
     public String run(String arg) {
         if (arg == null || arg.isBlank()) {
             return "ERROR: usage: pgrep <program name>";

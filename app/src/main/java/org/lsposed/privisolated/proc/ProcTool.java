@@ -13,4 +13,9 @@ public interface ProcTool {
      * argument (process name or PID); tools that do not need one ignore it.
      */
     String run(String arg);
+
+    /** Whether the tool needs a non-empty argument (name/PID) to be useful. */
+    default boolean requiresArg() {
+        return false;
+    }
 }
